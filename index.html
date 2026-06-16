@@ -157,11 +157,12 @@ async function loadMatches(){
     const r=await fetch(PROXY);
     if(!r.ok) throw new Error(r.status);
     const d=await r.json();
-    if(!d.matches||!d.matches.length) throw new Error("Aucun match");
-    allMatches=d.matches;
+    if(!d.matches||!d.matches.length) throw new Error("vide");
+    allMatches=d.matches.filter(m=>m.homeTeam&&m.homeTeam.name); // filtrer matchs sans équipes (futurs tours)
     allMatches.forEach(m=>{if(!matchOdds[m.id])matchOdds[m.id]=calcOdds(m);});
     const now=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-    document.getElementById('api-status').textContent=`✅ ${allMatches.length} matchs · ${now}`;
+    const live=allMatches.filter(m=>m.status==='IN_PLAY'||m.status==='PAUSED').length;
+    document.getElementById('api-status').textContent=`✅ ${allMatches.length} matchs${live>0?' · 🔴 '+live+' en direct':''} · ${now}`;
     renderMatches();
   } catch(e){
     document.getElementById('api-status').textContent="⚠️ Mode démo ("+e.message+")";
@@ -183,15 +184,40 @@ function useDemoData(){
 }
 
 function getStatusInfo(m){
-  if(m.status==="IN_PLAY"||m.status==="PAUSED") return {cls:"status-live",label:`🔴 ${m.minute||"?"}'`};
-  if(m.status==="FINISHED") return {cls:"status-done",label:"Terminé"};
-  const t=m.utcDate?new Date(m.utcDate).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):"";
-  return {cls:"status-soon",label:`⏰ ${t}`};
+  if(m.status==="IN_PLAY"||m.status==="PAUSED"){
+    // Calcul de la minute écoulée depuis le début du match
+    const started=new Date(m.utcDate);
+    const elapsed=Math.floor((Date.now()-started)/60000);
+    const min=elapsed>0&&elapsed<=120?elapsed:m.minute||"?";
+    return {cls:"status-live",label:`🔴 ${min}'`};
+  }
+  if(m.status==="FINISHED") return {cls:"status-done",label:"✅ Terminé"};
+  // Afficher date + heure locale pour les matchs à venir
+  const d=m.utcDate?new Date(m.utcDate):null;
+  if(!d) return {cls:"status-soon",label:"⏰ À venir"};
+  const today=new Date(); today.setHours(0,0,0,0);
+  const mDay=new Date(d); mDay.setHours(0,0,0,0);
+  const diff=Math.round((mDay-today)/(1000*60*60*24));
+  const t=d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  if(diff===0) return {cls:"status-soon",label:`⏰ Auj. ${t}`};
+  if(diff===1) return {cls:"status-soon",label:`⏰ Demain ${t}`};
+  const dateStr=d.toLocaleDateString('fr-FR',{day:'numeric',month:'short'});
+  return {cls:"status-soon",label:`⏰ ${dateStr} ${t}`};
 }
 
 function renderMatches(){
+  // Trier : live en premier, puis par date
+  const sorted=[...allMatches].sort((a,b)=>{
+    const liveA=a.status==='IN_PLAY'||a.status==='PAUSED'?0:1;
+    const liveB=b.status==='IN_PLAY'||b.status==='PAUSED'?0:1;
+    if(liveA!==liveB) return liveA-liveB;
+    return new Date(a.utcDate)-new Date(b.utcDate);
+  });
   const groups={};
-  allMatches.forEach(m=>{const g=m.group||"Phase de groupes";if(!groups[g])groups[g]=[];groups[g].push(m);});
+  sorted.forEach(m=>{
+    const g=m.status==='IN_PLAY'||m.status==='PAUSED'?'🔴 En direct':(m.group||m.stage||"Autre");
+    if(!groups[g])groups[g]=[];groups[g].push(m);
+  });
   let html='';
   Object.entries(groups).forEach(([g,ms])=>{
     html+=`<div class="section-title">${g}</div>`;
@@ -202,7 +228,7 @@ function renderMatches(){
         :`<div class="score">${sc.home} - ${sc.away}</div><div class="score-time">${si.label}</div>`;
       const odds=matchOdds[m.id];
       let betHTML='';
-      if(m.status!=='FINISHED'&&odds){
+      if((m.status!=='FINISHED')&&odds){
         const rows=[[{k:'win1',l:hN.split(' ')[0]+' gagne',o:odds.win1},{k:'draw',l:'Nul',o:odds.draw},{k:'win2',l:aN.split(' ')[0]+' gagne',o:odds.win2}],[{k:'btts',l:'Les 2 marquent',o:odds.btts},{k:'over25',l:'+2.5 buts',o:odds.over25},{k:'under25',l:'-2.5 buts',o:odds.under25}]];
         rows.forEach(row=>{
           betHTML+='<div class="bet-row">';
