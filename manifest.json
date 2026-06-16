@@ -2,7 +2,7 @@
   "name": "CDM 2026 Paris",
   "short_name": "CDM Paris",
   "description": "Paris sur les matchs de la Coupe du Monde 2026",
-  "start_url": "/cdm-paris.html",
+  "start_url": "/cdm-paris/index.html",
   "display": "standalone",
   "background_color": "#f4f5f7",
   "theme_color": "#1a3a6b",
